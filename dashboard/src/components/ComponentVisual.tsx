@@ -3,6 +3,7 @@ import type { Component } from "../api/devices";
 type VisualKind =
   | "auto"
   | "thermometer"
+  | "motion"
   | "water"
   | "distance"
   | "gauge"
@@ -13,6 +14,7 @@ type LatestPayload = { payload: any; updated_at: string } | undefined;
 
 const SENSOR_VISUALS: { value: VisualKind; label: string }[] = [
   { value: "thermometer", label: "Thermometer" },
+  { value: "motion", label: "Motion" },
   { value: "water", label: "Water level" },
   { value: "distance", label: "Distance bar" },
   { value: "gauge", label: "Gauge" },
@@ -56,6 +58,9 @@ function inferSensorVisual(component: Component, latest: LatestPayload): VisualK
   const states = Array.isArray(component.capabilities?.states)
     ? component.capabilities?.states.map((s: any) => String(s).toLowerCase())
     : [];
+  if (name.includes("pir") || name.includes("motion") || states.includes("motion")) {
+    return "motion";
+  }
   if (name.includes("water") || unit.includes("level") || states.includes("wet")) return "water";
   if (name.includes("distance") || unit === "cm" || unit === "mm" || unit === "m") {
     return "distance";
@@ -115,6 +120,29 @@ function VisualThermometer({ percent }: { percent: number }) {
       </div>
       <div className="text-[11px] font-semibold text-gray-500 dark:text-white/60">
         {Math.round(percent * 100)}%
+      </div>
+    </div>
+  );
+}
+
+function VisualMotion({ motion }: { motion: boolean }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        className={`flex h-12 w-12 items-center justify-center rounded-2xl border ${
+          motion
+            ? "border-emerald-300 bg-emerald-400/20 shadow-[0_0_18px_rgba(16,185,129,0.35)]"
+            : "border-gray-200 bg-gray-100 dark:border-white/10 dark:bg-white/5"
+        }`}
+      >
+        <div
+          className={`h-3 w-3 rounded-full ${
+            motion ? "bg-emerald-400" : "bg-gray-400 dark:bg-white/30"
+          }`}
+        />
+      </div>
+      <div className="text-[11px] font-semibold uppercase text-gray-500 dark:text-white/60">
+        {motion ? "Motion" : "Idle"}
       </div>
     </div>
   );
@@ -222,6 +250,7 @@ export function ComponentVisual({
   const range = getRange(component, latest);
   const percent = numeric == null ? 0 : clamp((numeric - range.min) / (range.max - range.min));
   const distancePercent = numeric == null ? 0 : clamp(1 - numeric / range.max);
+  const motion = String(payload.value ?? "").toLowerCase() === "motion";
 
   if (component.kind === "actuator") {
     const on = isOn(payload);
@@ -235,6 +264,7 @@ export function ComponentVisual({
   return (
     <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-white/10 dark:bg-white/[0.04]">
       {visual === "thermometer" && <VisualThermometer percent={percent} />}
+      {visual === "motion" && <VisualMotion motion={motion} />}
       {visual === "water" && <VisualWater level={waterLevelFromPayload(payload)} />}
       {visual === "distance" && <VisualDistance percent={distancePercent} />}
       {visual === "gauge" && <VisualGauge percent={percent} />}

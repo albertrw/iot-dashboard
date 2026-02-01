@@ -1,0 +1,433 @@
+
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include <EEPROM.h>
+#include <PubSubClient.h>
+
+// ---------------------------
+// USER CONFIG
+// ---------------------------
+const char* WIFI_SSID     = "TJB ENGINEERING LTD-2G";
+const char* WIFI_PASSWORD = "TJBSAVED";
+
+const char* DEVICE_UID   = "dev_011c9775fb6ea4bf";
+const char* CLAIM_TOKEN  = "d3721e9f5c2756b6dcc178f04a0ce1ca2ad42cf63c6dec0222e5d74a2da6a9ff";
+
+const char* API_HOST = "192.168.1.76";
+const int   API_PORT = 4000;
+
+const char* MQTT_HOST = "192.168.1.76";
+const int   MQTT_PORT = 1883;
+
+// Components
+const char* DIST_COMPONENT_KEY   = "distance1";
+const char* LED_COMPONENT_KEY    = "led1"; // onboard LED
+const char* WATER_COMPONENT_KEY  = "water1";
+const char* LED2_COMPONENT_KEY   = "led2"; // external LED on D0
+
+// HC-SR04 pins
+const int TRIG_PIN = D5;
+const int ECHO_PIN = D6;
+
+// Hardware pins
+const int WATER_PIN = A0;  // Water level sensor (analog input)
+const int LED2_PIN  = D0;  // External LED (digital output)
+
+// Water level thresholds (0-1023).
+const int WATER_LOW_THRESHOLD  = 50;
+const int WATER_MED_THRESHOLD  = 100;
+const int WATER_HIGH_THRESHOLD = 200;
+
+// Distance alarm
+const long ALARM_DISTANCE_CM = 10;
+
+const unsigned long PUBLISH_MS = 500;
+const unsigned long STATUS_PUBLISH_MS = 5000;
+
+// ---------------------------
+// EEPROM
+// ---------------------------
+const int EEPROM_SIZE = 512;
+const int MAGIC_ADDR  = 0;
+const int SECRET_ADDR = 8;
+const int SECRET_MAX  = 128;
+const uint32_t MAGIC  = 0xBEEFF00D;
+
+WiFiClient wifiClient;
+PubSubClient mqtt(wifiClient);
+
+unsigned long lastPub = 0;
+unsigned long lastStatus = 0;
+bool ledStateOn = false;
+bool led2StateOn = false;
+
+// ---------------------------
+// Topic helpers
+// ---------------------------
+String topicTelemetry(const char* componentKey) {
+  return "devices/" + String(DEVICE_UID) + "/telemetry/" + String(componentKey);
+}
+
+String topicCommand(const char* componentKey) {
+  return "devices/" + String(DEVICE_UID) + "/command/" + String(componentKey);
+}
+
+String topicManifest() {
+  return "devices/" + String(DEVICE_UID) + "/meta/components";
+}
+
+String topicStatus() {
+  return "devices/" + String(DEVICE_UID) + "/status";
+}
+
+// ---------------------------
+// EEPROM helpers
+// ---------------------------
+bool eepromHasSecret() {
+  uint32_t m = 0;
+  EEPROM.get(MAGIC_ADDR, m);
+  return (m == MAGIC);
+}
+
+String eepromReadSecret() {
+  char buf[SECRET_MAX + 1];
+  for (int i = 0; i < SECRET_MAX; i++) {
+    buf[i] = char(EEPROM.read(SECRET_ADDR + i));
+    if (buf[i] == '\0') break;
+  }
+  buf[SECRET_MAX] = '\0';
+  return String(buf);
+}
+
+void eepromWriteSecret(const String& secret) {
+  uint32_t m = MAGIC;
+  EEPROM.put(MAGIC_ADDR, m);
+
+  for (int i = 0; i < SECRET_MAX; i++) EEPROM.write(SECRET_ADDR + i, 0);
+
+  int n = secret.length();
+  if (n > SECRET_MAX - 1) n = SECRET_MAX - 1;
+  for (int i = 0; i < n; i++) EEPROM.write(SECRET_ADDR + i, secret[i]);
+  EEPROM.write(SECRET_ADDR + n, 0);
+
+  EEPROM.commit();
+}
+
+// ---------------------------
+// Wi-Fi + Claim
+// ---------------------------
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  Serial.print("WiFi connecting");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(400);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("WiFi OK, IP: ");
+  Serial.println(WiFi.localIP());
+}
+
+String claimDeviceGetSecret() {
+  WiFiClient client;
+  HTTPClient http;
+
+  String url = String("http://") + API_HOST + ":" + API_PORT + "/api/devices/claim";
+  Serial.print("Claiming via: ");
+  Serial.println(url);
+
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin failed");
+    return "";
+  }
+
+  http.addHeader("Content-Type", "application/json");
+
+  String body = String("{\"device_uid\":\"") + DEVICE_UID +
+                String("\",\"claim_token\":\"") + CLAIM_TOKEN + "\"}";
+
+  int code = http.POST(body);
+  String resp = http.getString();
+  http.end();
+
+  Serial.print("Claim HTTP code: ");
+  Serial.println(code);
+  Serial.print("Claim response: ");
+  Serial.println(resp);
+
+  if (code != 200) return "";
+
+  int idx = resp.indexOf("\"device_secret\"");
+  if (idx < 0) return "";
+  int colon = resp.indexOf(":", idx);
+  int q1 = resp.indexOf("\"", colon);
+  int q2 = resp.indexOf("\"", q1 + 1);
+  if (q1 < 0 || q2 < 0) return "";
+
+  return resp.substring(q1 + 1, q2);
+}
+
+// ---------------------------
+// Sensors
+// ---------------------------
+long readDistanceCm() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  unsigned long duration = pulseIn(ECHO_PIN, HIGH, 25000);
+  if (duration == 0) return -1;
+
+  return (long)(duration / 58);
+}
+
+int readWaterRaw() {
+  const int samples = 5;
+  long sum = 0;
+  for (int i = 0; i < samples; i++) {
+    sum += analogRead(WATER_PIN);
+    delay(5);
+  }
+  return (int)(sum / samples);
+}
+
+String waterLevelFromRaw(int raw) {
+  if (raw < WATER_LOW_THRESHOLD) return "dry";
+  if (raw < WATER_MED_THRESHOLD) return "low";
+  if (raw < WATER_HIGH_THRESHOLD) return "medium";
+  return "high";
+}
+
+// ---------------------------
+// Actuators
+// ---------------------------
+// NOTE: NodeMCU built-in LED is usually ACTIVE-LOW:
+// LOW = ON, HIGH = OFF
+void setLed(bool on) {
+  ledStateOn = on;
+  digitalWrite(LED_BUILTIN, on ? LOW : HIGH);
+
+  String payload = on ? "{\"state\":\"on\"}" : "{\"state\":\"off\"}";
+  String t = topicTelemetry(LED_COMPONENT_KEY);
+  mqtt.publish(t.c_str(), payload.c_str(), false);
+
+  Serial.print("LED1 set to ");
+  Serial.println(on ? "ON" : "OFF");
+}
+
+void setLed2(bool on) {
+  led2StateOn = on;
+  digitalWrite(LED2_PIN, on ? HIGH : LOW);
+
+  String payload = on ? "{\"state\":\"on\"}" : "{\"state\":\"off\"}";
+  String t = topicTelemetry(LED2_COMPONENT_KEY);
+  mqtt.publish(t.c_str(), payload.c_str(), false);
+
+  Serial.print("LED2 set to ");
+  Serial.println(on ? "ON" : "OFF");
+}
+
+void applyDistanceAlarm(long cm) {
+  if (cm <= 0) return;
+  if (cm <= ALARM_DISTANCE_CM) {
+    if (!ledStateOn) setLed(true);
+    if (!led2StateOn) setLed2(true);
+  } else {
+    if (ledStateOn) setLed(false);
+    if (led2StateOn) setLed2(false);
+  }
+}
+
+// ---------------------------
+// MQTT
+// ---------------------------
+void publishManifest() {
+  String payload =
+    "{\"components\":["
+      "{\"key\":\"distance1\",\"kind\":\"sensor\",\"name\":\"Front Distance\",\"capabilities\":{\"unit\":\"cm\"}},"
+      "{\"key\":\"water1\",\"kind\":\"sensor\",\"name\":\"Water Level\",\"capabilities\":{\"states\":[\"dry\",\"low\",\"medium\",\"high\"]}},"
+      "{\"key\":\"led1\",\"kind\":\"actuator\",\"name\":\"Onboard LED\",\"capabilities\":{\"commands\":[\"on\",\"off\"]}},"
+      "{\"key\":\"led2\",\"kind\":\"actuator\",\"name\":\"External LED\",\"capabilities\":{\"commands\":[\"on\",\"off\"]}}"
+    "]}";
+
+  String t = topicManifest();
+  mqtt.publish(t.c_str(), payload.c_str(), false);
+  Serial.println("Published manifest");
+}
+
+void publishStatusOnline() {
+  String t = topicStatus();
+  mqtt.publish(t.c_str(), "{\"state\":\"online\"}", true);
+}
+
+void onMqttMessage(char* topic, byte* payload, unsigned int length) {
+  String t = String(topic);
+  String msg;
+  msg.reserve(length);
+  for (unsigned int i = 0; i < length; i++) msg += (char)payload[i];
+
+  Serial.print("CMD ");
+  Serial.print(t);
+  Serial.print(" => ");
+  Serial.println(msg);
+
+  if (t == topicCommand(LED_COMPONENT_KEY)) {
+    if (msg.indexOf("\"state\"") >= 0 && msg.indexOf("on") >= 0) {
+      setLed(true);
+    } else if (msg.indexOf("\"state\"") >= 0 && msg.indexOf("off") >= 0) {
+      setLed(false);
+    }
+  }
+
+  if (t == topicCommand(LED2_COMPONENT_KEY)) {
+    if (msg.indexOf("\"state\"") >= 0 && msg.indexOf("on") >= 0) {
+      setLed2(true);
+    } else if (msg.indexOf("\"state\"") >= 0 && msg.indexOf("off") >= 0) {
+      setLed2(false);
+    }
+  }
+}
+
+void mqttEnsureConnected(const String& secret) {
+  if (mqtt.connected()) return;
+
+  mqtt.setServer(MQTT_HOST, MQTT_PORT);
+  mqtt.setCallback(onMqttMessage);
+
+  String willTopic = topicStatus();
+
+  while (!mqtt.connected()) {
+    Serial.print("MQTT connecting as ");
+    Serial.print(DEVICE_UID);
+    Serial.print(" ... ");
+
+    bool ok = mqtt.connect(
+      DEVICE_UID,
+      DEVICE_UID,
+      secret.c_str(),
+      willTopic.c_str(),
+      0,
+      true,
+      "{\"state\":\"offline\"}"
+    );
+
+    if (ok) {
+      Serial.println("OK");
+
+      mqtt.subscribe(topicCommand(LED_COMPONENT_KEY).c_str());
+      mqtt.subscribe(topicCommand(LED2_COMPONENT_KEY).c_str());
+      Serial.println("Subscribed to LED1 + LED2 commands");
+
+      publishManifest();
+      publishStatusOnline();
+      setLed(false);
+      setLed2(false);
+    } else {
+      Serial.print("FAIL rc=");
+      Serial.println(mqtt.state());
+      delay(1500);
+    }
+  }
+}
+
+void publishDistanceTelemetry(long cm) {
+  String payload = String("{\"value\":") + cm + ",\"unit\":\"cm\"}";
+  String t = topicTelemetry(DIST_COMPONENT_KEY);
+
+  bool ok = mqtt.publish(t.c_str(), payload.c_str(), false);
+  Serial.print("PUB ");
+  Serial.print(t);
+  Serial.print(" => ");
+  Serial.println(ok ? payload : "FAILED");
+}
+
+void publishWaterTelemetry(const String& level, int raw) {
+  String payload = String("{\"value\":\"") + level + "\",\"raw\":" + raw + "}";
+  String t = topicTelemetry(WATER_COMPONENT_KEY);
+
+  bool ok = mqtt.publish(t.c_str(), payload.c_str(), false);
+  Serial.print("PUB ");
+  Serial.print(t);
+  Serial.print(" => ");
+  Serial.println(ok ? payload : "FAILED");
+}
+
+// ---------------------------
+// Arduino lifecycle
+// ---------------------------
+void setup() {
+  Serial.begin(115200);
+  delay(300);
+  Serial.println("\nBOOT: IoT firmware start");
+
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+
+  pinMode(WATER_PIN, INPUT);
+  pinMode(LED2_PIN, OUTPUT);
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH); // OFF
+  digitalWrite(LED2_PIN, LOW);     // OFF
+
+  EEPROM.begin(EEPROM_SIZE);
+
+  connectWiFi();
+
+  String secret;
+  if (eepromHasSecret()) {
+    secret = eepromReadSecret();
+    Serial.print("Found saved device_secret (len=");
+    Serial.print(secret.length());
+    Serial.println(")");
+  }
+
+  if (!eepromHasSecret() || secret.length() < 10) {
+    Serial.println("No valid secret saved; claiming now...");
+    secret = claimDeviceGetSecret();
+    if (secret.length() < 10) {
+      Serial.println("Claim failed (token expired or wrong host/port).");
+      delay(5000);
+      ESP.restart();
+    }
+    eepromWriteSecret(secret);
+    Serial.println("Secret saved to EEPROM.");
+  }
+
+  mqttEnsureConnected(secret);
+}
+
+void loop() {
+  mqtt.loop();
+
+  unsigned long now = millis();
+
+  if (mqtt.connected() && now - lastStatus >= STATUS_PUBLISH_MS) {
+    lastStatus = now;
+    publishStatusOnline();
+  }
+
+  if (now - lastPub >= PUBLISH_MS) {
+    lastPub = now;
+
+    String secret = eepromReadSecret();
+    mqttEnsureConnected(secret);
+
+    long cm = readDistanceCm();
+    if (cm > 0) {
+      publishDistanceTelemetry(cm);
+      applyDistanceAlarm(cm);
+    } else {
+      Serial.println("Sensor read timeout / invalid.");
+    }
+
+    int waterRaw = readWaterRaw();
+    String level = waterLevelFromRaw(waterRaw);
+    publishWaterTelemetry(level, waterRaw);
+  }
+}

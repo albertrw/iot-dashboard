@@ -12,12 +12,13 @@ import {
   Gauge,
   PlugZap,
   Eye,
+  Trash2,
   KeyRound,
   ShieldCheck,
   Radio,
 } from "lucide-react";
 import { safeCopy } from "../utils/safeCopy";
-import { regenerateClaimToken, updateComponentMeta } from "../api/devices";
+import { deleteComponent, regenerateClaimToken, updateComponentMeta } from "../api/devices";
 import { DeviceDetailSkeleton } from "../components/ui/skeletons/DeviceDetailSkeleton";
 
 function formatDate(value?: string | null) {
@@ -363,21 +364,42 @@ export function DeviceLivePage() {
                       {c.component_key}
                     </div>
                   </div>
-                  <button
-                    onClick={async () => {
-                      try {
-                        await updateComponentMeta(deviceUid, c.component_key, { hidden: false });
-                        push("Component restored");
-                        await loadDevice(deviceUid);
-                      } catch (e: any) {
-                        push(e?.message ?? "Failed to restore component");
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    Unhide
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await updateComponentMeta(deviceUid, c.component_key, { hidden: false });
+                          push("Component restored");
+                          await loadDevice(deviceUid);
+                        } catch (e: any) {
+                          push(e?.message ?? "Failed to restore component");
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] text-gray-700 hover:bg-gray-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80 dark:hover:bg-white/10"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Unhide
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const ok = window.confirm(
+                          `Delete ${label}? This removes the component and its latest data.`
+                        );
+                        if (!ok) return;
+                        try {
+                          await deleteComponent(deviceUid, c.component_key);
+                          push("Component deleted");
+                          await loadDevice(deviceUid);
+                        } catch (e: any) {
+                          push(e?.message ?? "Failed to delete component");
+                        }
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/15 dark:text-red-100 dark:hover:bg-red-500/25"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Delete
+                    </button>
+                  </div>
                 </div>
               );
             })}

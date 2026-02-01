@@ -98,6 +98,15 @@ export async function updateComponentMeta(
   );
 }
 
+export async function deleteComponent(deviceUid: string, componentKey: string) {
+  return api<{ ok: true; component_key: string }>(
+    `/api/devices/${encodeURIComponent(deviceUid)}/components/${encodeURIComponent(componentKey)}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
 export async function regenerateClaimToken(deviceUid: string) {
   return api<{
     device_uid: string;

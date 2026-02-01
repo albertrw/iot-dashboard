@@ -9,6 +9,7 @@ import { notificationsRouter } from "./api/notifications";
 import { initWebSocket } from "./websocket";
 import { startOfflineMonitor } from "./monitor/offlineMonitor";
 import { startComponentOfflineMonitor } from "./monitor/componentOfflineMonitor";
+import { startComponentAutoHideMonitor } from "./monitor/componentAutoHide";
 
 const app = express();
 
@@ -30,6 +31,7 @@ const server = http.createServer(app);
 initWebSocket(server);
 startOfflineMonitor();
 startComponentOfflineMonitor();
+startComponentAutoHideMonitor();
 
 server.listen(port, host, () => {
   console.log(`🚀 API listening on http://${host}:${port}`);

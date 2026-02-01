@@ -509,3 +509,37 @@ devicesRouter.patch("/:deviceUid/components/:componentKey", async (req, res) => 
     return res.status(500).json({ error: err.message ?? "Server error" });
   }
 });
+
+/**
+ * DELETE /api/devices/:deviceUid/components/:componentKey
+ * Removes a component record (and latest telemetry via FK cascade).
+ */
+devicesRouter.delete("/:deviceUid/components/:componentKey", async (req, res) => {
+  try {
+    const ownerUserId = requireUserId(req);
+    const deviceUid = req.params.deviceUid;
+    const componentKey = req.params.componentKey;
+
+    const delRes = await db.query(
+      `
+      DELETE FROM components c
+      USING devices d
+      WHERE d.id = c.device_id
+        AND d.device_uid = $1
+        AND d.owner_user_id = $2
+        AND c.component_key = $3
+      RETURNING c.id, c.component_key
+      `,
+      [deviceUid, ownerUserId, componentKey]
+    );
+
+    if (delRes.rowCount === 0) {
+      return res.status(404).json({ error: "Component not found (or not yours)" });
+    }
+
+    return res.json({ ok: true, component_key: delRes.rows[0].component_key });
+  } catch (err: any) {
+    console.error("DELETE /api/devices/:deviceUid/components/:componentKey failed:", err);
+    return res.status(500).json({ error: err.message ?? "Server error" });
+  }
+});

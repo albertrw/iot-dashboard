@@ -3,6 +3,7 @@ declare global {
   var __mqttStarted: boolean | undefined;
 }
 
+import "dotenv/config";
 import mqtt from "mqtt";
 import { db } from "../db";
 import {
@@ -93,7 +94,7 @@ async function ensureComponentStub(
 if (!global.__mqttStarted) {
   global.__mqttStarted = true;
 
-  const MQTT_URL = "mqtt://192.168.1.68:1883";
+  const MQTT_URL = process.env.MQTT_URL ?? "mqtt://127.0.0.1:1883";
   const client = mqtt.connect(MQTT_URL);
 
   client.on("connect", () => {
@@ -135,9 +136,29 @@ if (!global.__mqttStarted) {
         if (manifestKeys.length > 0) {
           await db.query(
             `
-            DELETE FROM components
+            UPDATE components
+            SET meta = jsonb_set(
+              jsonb_set(meta, '{hidden}', to_jsonb(true), true),
+              '{hidden_reason}', to_jsonb('manifest'), true
+            )
             WHERE device_id = $1
               AND component_key <> ALL($2::text[])
+            `,
+            [device_id, manifestKeys]
+          );
+
+          await db.query(
+            `
+            UPDATE components
+            SET meta = jsonb_strip_nulls(
+              jsonb_set(
+                jsonb_set(meta, '{hidden}', to_jsonb(false), true),
+                '{hidden_reason}', 'null'::jsonb, true
+              )
+            )
+            WHERE device_id = $1
+              AND component_key = ANY($2::text[])
+              AND (meta->>'hidden_reason') = 'manifest'
             `,
             [device_id, manifestKeys]
           );
@@ -187,6 +208,20 @@ if (!global.__mqttStarted) {
             component_id,
           ]);
         }
+
+        await db.query(
+          `
+          UPDATE components
+          SET meta = jsonb_strip_nulls(
+            jsonb_set(
+              jsonb_set(meta, '{hidden}', to_jsonb(false), true),
+              '{hidden_reason}', 'null'::jsonb, true
+            )
+          )
+          WHERE id = $1 AND (meta->>'hidden_reason') = 'stale'
+          `,
+          [component_id]
+        );
 
         // update last seen + online status
         const statusRes = await db.query(
