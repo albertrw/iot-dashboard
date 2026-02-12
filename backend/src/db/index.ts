@@ -10,4 +10,4 @@ export const db = new Pool({
 });
 
 db.on("connect", () => console.log("✅ Connected to PostgreSQL"));
-db.on("error", (err) => console.error("❌ PostgreSQL error:", err));
+db.on("error", (err: unknown) => console.error("❌ PostgreSQL error:", err));

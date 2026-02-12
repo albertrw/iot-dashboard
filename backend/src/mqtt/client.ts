@@ -1,11 +1,30 @@
-import mqtt from "mqtt";
+import "dotenv/config";
+import mqtt, { type IClientOptions } from "mqtt";
 
-const MQTT_URL = process.env.MQTT_URL || "mqtt://192.168.1.68:1883";
+const MQTT_URL = process.env.MQTT_URL ?? "mqtt://127.0.0.1:1883";
 
-export const mqttClient = mqtt.connect(MQTT_URL);
+const options: IClientOptions = {
+  connectTimeout: 10_000,
+  reconnectPeriod: 2_000,
+  keepalive: 30,
+};
+
+export const mqttClient = mqtt.connect(MQTT_URL, options);
 
 mqttClient.on("connect", () => {
   console.log("✅ MQTT publisher connected");
+});
+
+mqttClient.on("reconnect", () => {
+  console.log("↻ MQTT publisher reconnecting...");
+});
+
+mqttClient.on("offline", () => {
+  console.log("⚠️ MQTT publisher offline");
+});
+
+mqttClient.on("close", () => {
+  console.log("MQTT publisher connection closed");
 });
 
 mqttClient.on("error", (err) => {

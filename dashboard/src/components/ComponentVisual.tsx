@@ -1,4 +1,5 @@
 import type { Component } from "../api/devices";
+import { AlertTriangle, Flame, Wind } from "lucide-react";
 
 type VisualKind =
   | "auto"
@@ -6,6 +7,7 @@ type VisualKind =
   | "motion"
   | "water"
   | "distance"
+  | "gas"
   | "gauge"
   | "bulb"
   | "switch";
@@ -17,6 +19,7 @@ const SENSOR_VISUALS: { value: VisualKind; label: string }[] = [
   { value: "motion", label: "Motion" },
   { value: "water", label: "Water level" },
   { value: "distance", label: "Distance bar" },
+  { value: "gas", label: "Gas meter" },
   { value: "gauge", label: "Gauge" },
 ];
 
@@ -55,9 +58,22 @@ function getRange(component: Component, latest: LatestPayload) {
 function inferSensorVisual(component: Component, latest: LatestPayload): VisualKind {
   const name = `${component.component_key} ${component.meta?.name ?? ""}`.toLowerCase();
   const unit = String(latest?.payload?.unit ?? component.capabilities?.unit ?? "").toLowerCase();
+  const level = String(latest?.payload?.level ?? "").toLowerCase();
   const states = Array.isArray(component.capabilities?.states)
     ? component.capabilities?.states.map((s: any) => String(s).toLowerCase())
     : [];
+  if (
+    name.includes("gas") ||
+    name.includes("mq") ||
+    name.includes("smoke") ||
+    name.includes("lpg") ||
+    name.includes("co ") ||
+    name.includes("co2") ||
+    name.includes("ppm") ||
+    (unit === "adc" && ["low", "medium", "high"].includes(level))
+  ) {
+    return "gas";
+  }
   if (name.includes("pir") || name.includes("motion") || states.includes("motion")) {
     return "motion";
   }
@@ -181,6 +197,87 @@ function VisualDistance({ percent }: { percent: number }) {
   );
 }
 
+function gasLevelFromPayload(payload: any) {
+  const level = String(payload?.level ?? payload?.value ?? "").toLowerCase();
+  if (["low", "medium", "high"].includes(level)) return level;
+  const raw = parseNumber(payload?.value ?? payload?.raw);
+  if (raw == null) return "low";
+  const pct = clamp(raw / 1023);
+  if (pct < 0.35) return "low";
+  if (pct < 0.7) return "medium";
+  return "high";
+}
+
+function VisualGas({
+  raw,
+  level,
+}: {
+  raw: number | null;
+  level: "low" | "medium" | "high";
+}) {
+  const pct = raw == null ? 0 : clamp(raw / 1023);
+  const markerLeft = `${Math.round(pct * 100)}%`;
+  const color =
+    level === "high"
+      ? "text-rose-600 dark:text-rose-400"
+      : level === "medium"
+        ? "text-amber-700 dark:text-amber-300"
+        : "text-emerald-700 dark:text-emerald-300";
+
+  return (
+    <div className="w-full">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <div
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/5 ${color}`}
+          >
+            {level === "high" ? (
+              <AlertTriangle className="h-4 w-4" />
+            ) : level === "medium" ? (
+              <Flame className="h-4 w-4" />
+            ) : (
+              <Wind className="h-4 w-4" />
+            )}
+          </div>
+          <div className="leading-tight">
+            <div className={`text-xs font-semibold uppercase tracking-wide ${color}`}>
+              {level}
+            </div>
+            <div className="text-[11px] text-gray-500 dark:text-white/60">
+              Gas level
+            </div>
+          </div>
+        </div>
+
+        <div className="text-right">
+          <div className="text-sm font-semibold text-gray-800 dark:text-white/85">
+            {raw == null ? "—" : raw}
+          </div>
+          <div className="text-[11px] text-gray-500 dark:text-white/60">ADC</div>
+        </div>
+      </div>
+
+      <div className="relative mt-3 h-3 w-full overflow-hidden rounded-full border border-gray-200 bg-gray-50 dark:border-white/10 dark:bg-white/[0.04]">
+        <div className="absolute inset-0 grid grid-cols-3">
+          <div className="bg-emerald-500/55" />
+          <div className="bg-amber-500/55" />
+          <div className="bg-rose-500/55" />
+        </div>
+        <div
+          className="absolute top-0 h-full w-1 -translate-x-1/2 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.08)] dark:bg-white/90"
+          style={{ left: markerLeft }}
+        />
+      </div>
+
+      <div className="mt-2 flex justify-between text-[10px] text-gray-500 dark:text-white/50">
+        <span>Low</span>
+        <span>Medium</span>
+        <span>High</span>
+      </div>
+    </div>
+  );
+}
+
 function VisualGauge({ percent }: { percent: number }) {
   const pct = Math.round(percent * 100);
   return (
@@ -251,6 +348,8 @@ export function ComponentVisual({
   const percent = numeric == null ? 0 : clamp((numeric - range.min) / (range.max - range.min));
   const distancePercent = numeric == null ? 0 : clamp(1 - numeric / range.max);
   const motion = String(payload.value ?? "").toLowerCase() === "motion";
+  const gasRaw = parseNumber(payload.value ?? payload.raw);
+  const gasLevel = gasLevelFromPayload(payload) as "low" | "medium" | "high";
 
   if (component.kind === "actuator") {
     const on = isOn(payload);
@@ -267,6 +366,7 @@ export function ComponentVisual({
       {visual === "motion" && <VisualMotion motion={motion} />}
       {visual === "water" && <VisualWater level={waterLevelFromPayload(payload)} />}
       {visual === "distance" && <VisualDistance percent={distancePercent} />}
+      {visual === "gas" && <VisualGas raw={gasRaw} level={gasLevel} />}
       {visual === "gauge" && <VisualGauge percent={percent} />}
     </div>
   );
