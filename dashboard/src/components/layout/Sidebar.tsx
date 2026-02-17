@@ -1,6 +1,9 @@
-import { NavLink } from "react-router-dom";
-import { Cpu, LayoutGrid, Wrench } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { Cpu, LayoutGrid, LogOut, Wrench } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { Button } from "../ui/button";
+import { useAuth } from "../../auth/auth";
+import { logout as apiLogout } from "../../api/auth";
 
 const items = [
   { to: "/", label: "Overview", icon: LayoutGrid },
@@ -9,6 +12,8 @@ const items = [
 ];
 
 export function Sidebar() {
+  const navigate = useNavigate();
+  const { logout } = useAuth();
   return (
     <aside className="hidden w-[260px] shrink-0 md:sticky md:top-20 md:block md:self-start">
       <div className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]">
@@ -40,6 +45,21 @@ export function Sidebar() {
           <div className="mt-1 text-xs text-gray-500 dark:text-white/60">
             Use manifests to auto-render sensors/actuators dynamically.
           </div>
+        </div>
+
+        <div className="mt-4 border-t border-gray-200 pt-3 dark:border-white/10">
+          <Button
+            variant="ghost"
+            className="w-full justify-start"
+            onClick={() => {
+              apiLogout().catch(() => {});
+              logout();
+              navigate("/login");
+            }}
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </Button>
         </div>
       </div>
     </aside>

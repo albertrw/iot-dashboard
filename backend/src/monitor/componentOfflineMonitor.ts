@@ -52,6 +52,7 @@ export function startComponentOfflineMonitor() {
         );
 
         broadcastComponentStatus({
+          owner_user_id: row.owner_user_id,
           device_uid: row.device_uid,
           component_key: row.component_key,
           is_online: false,

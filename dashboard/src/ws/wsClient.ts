@@ -36,6 +36,14 @@ type WsMessage =
 
 type Listener = (msg: WsMessage) => void;
 
+function readToken() {
+  try {
+    return localStorage.getItem("auth_token");
+  } catch {
+    return null;
+  }
+}
+
 export class WsClient {
   private url: string;
   private ws: WebSocket | null = null;
@@ -48,12 +56,18 @@ export class WsClient {
     this.url = url;
   }
 
+  private canConnect() {
+    return Boolean(readToken());
+  }
+
   connect() {
+    const token = readToken();
+    if (!token) return;
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
 
-    this.ws = new WebSocket(this.url);
+    this.ws = new WebSocket(this.url, token);
 
     this.ws.onopen = () => {
       this.backoffMs = 500;
@@ -83,6 +97,7 @@ export class WsClient {
   }
 
   private scheduleReconnect() {
+    if (!this.canConnect()) return;
     if (this.reconnectTimer != null) return;
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;

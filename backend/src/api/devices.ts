@@ -2,6 +2,7 @@ import { Router } from "express";
 import crypto from "crypto";
 import { db } from "../db";
 import { mqttClient } from "../mqtt/client";
+import { requireAuth, type AuthedRequest } from "../auth/middleware";
 
 
 
@@ -25,20 +26,9 @@ function sha256Bytes(input: string) {
   return crypto.createHash("sha256").update(input).digest(); // Buffer
 }
 
-/**
- * Minimal "auth" for now:
- * Dashboard calls this endpoint with header: x-user-id: <uuid>
- * We'll replace this later with real JWT login.
- */
-function requireUserId(req: any) {
-  const userId = req.header("x-user-id");
-  if (!userId) throw new Error("Missing x-user-id header (UUID)");
-  return userId;
-}
-
-devicesRouter.get("/:deviceUid", async (req, res) => {
+devicesRouter.get("/:deviceUid", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const deviceUid = req.params.deviceUid;
 
     // 1) device (must belong to user)
@@ -97,9 +87,9 @@ devicesRouter.get("/:deviceUid", async (req, res) => {
   }
 });
 
-devicesRouter.get("/", async (req, res) => {
+devicesRouter.get("/", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
 
     const { rows } = await db.query(
       `
@@ -135,9 +125,9 @@ devicesRouter.get("/", async (req, res) => {
  *  - claim_token  (show once, store safely)
  *  - claim_expires_at
  */
-devicesRouter.post("/", async (req, res) => {
+devicesRouter.post("/", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
 
     const name = typeof req.body?.name === "string" ? req.body.name : null;
     const description =
@@ -267,9 +257,9 @@ devicesRouter.post("/claim", async (req, res) => {
  *  - claim_token (show once)
  *  - claim_expires_at
  */
-devicesRouter.post("/:deviceUid/claim-token", async (req, res) => {
+devicesRouter.post("/:deviceUid/claim-token", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const deviceUid = req.params.deviceUid;
 
     const { rows } = await db.query(
@@ -328,9 +318,9 @@ devicesRouter.post("/:deviceUid/claim-token", async (req, res) => {
  * Example:
  *  { "component_key": "led1", "command": { "state": "on" } }
  */
-devicesRouter.post("/:deviceUid/commands", async (req, res) => {
+devicesRouter.post("/:deviceUid/commands", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req); // keep your current "auth" model
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const deviceUid = req.params.deviceUid;
 
     const componentKey = req.body?.component_key;
@@ -382,9 +372,9 @@ devicesRouter.post("/:deviceUid/commands", async (req, res) => {
  * Update device label fields (name/description)
  * Body: { name?: string, description?: string }
  */
-devicesRouter.patch("/:deviceUid", async (req, res) => {
+devicesRouter.patch("/:deviceUid", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const deviceUid = req.params.deviceUid;
 
     const name = typeof req.body?.name === "string" ? req.body.name : null;
@@ -419,9 +409,9 @@ devicesRouter.patch("/:deviceUid", async (req, res) => {
  * DELETE /api/devices/:deviceUid
  * Deletes a device (and related components/latest if FK cascade is set)
  */
-devicesRouter.delete("/:deviceUid", async (req, res) => {
+devicesRouter.delete("/:deviceUid", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const deviceUid = req.params.deviceUid;
 
     const delRes = await db.query(
@@ -450,9 +440,9 @@ devicesRouter.delete("/:deviceUid", async (req, res) => {
  * Body: { name?: string, hidden?: boolean, visual?: string }
  * Stored in components.meta JSONB
  */
-devicesRouter.patch("/:deviceUid/components/:componentKey", async (req, res) => {
+devicesRouter.patch("/:deviceUid/components/:componentKey", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const deviceUid = req.params.deviceUid;
     const componentKey = req.params.componentKey;
 
@@ -514,9 +504,9 @@ devicesRouter.patch("/:deviceUid/components/:componentKey", async (req, res) => 
  * DELETE /api/devices/:deviceUid/components/:componentKey
  * Removes a component record (and latest telemetry via FK cascade).
  */
-devicesRouter.delete("/:deviceUid/components/:componentKey", async (req, res) => {
+devicesRouter.delete("/:deviceUid/components/:componentKey", requireAuth, async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const deviceUid = req.params.deviceUid;
     const componentKey = req.params.componentKey;
 

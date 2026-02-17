@@ -67,6 +67,13 @@ export function DevicesListPage() {
   }, []);
 
   useEffect(() => {
+    const add = searchParams.get("add");
+    if (add === "1" || add === "true") {
+      setAddOpen(true);
+    }
+  }, []);
+
+  useEffect(() => {
     setQ(queryParam);
   }, [queryParam]);
 

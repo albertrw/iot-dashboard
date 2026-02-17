@@ -7,6 +7,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { listNotifications, markAllNotificationsRead, markNotificationRead } from "../../api/notifications";
 import type { Notification } from "../../api/notifications";
 import { useToast } from "../ui/toast";
+import { useAuth } from "../../auth/auth";
+import { logout as apiLogout } from "../../api/auth";
+import { isAvatarKey } from "../../auth/avatars";
 
 
 
@@ -17,6 +20,8 @@ export function TopNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { push } = useToast();
+  const { user, logout } = useAuth();
+  const avatarKey = isAvatarKey(user?.avatar_key) ? user?.avatar_key : null;
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const requestedRef = useRef(false);
@@ -28,6 +33,8 @@ export function TopNav() {
   const [notifFilter, setNotifFilter] = useState<"all" | "unread">("all");
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const notifRef = useRef<HTMLDivElement | null>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -70,6 +77,16 @@ export function TopNav() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [notifOpen]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (!userMenuOpen) return;
+      if (!userMenuRef.current) return;
+      if (!userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [userMenuOpen]);
 
   useEffect(() => {
     const off = ws.on((msg: any) => {
@@ -379,11 +396,69 @@ export function TopNav() {
             )}
           </div>
 
-          <Button variant="ghost" size="icon" aria-label="Settings" className="cursor-pointer">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Settings"
+            className="cursor-pointer"
+            onClick={() => navigate("/profile")}
+          >
             <Settings className="h-4 w-4 text-gray-700 dark:text-white/80" />
           </Button>
-          <div className="ml-2 flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-xs text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-white/80">
-            A
+
+          <div className="relative" ref={userMenuRef}>
+            <button
+              type="button"
+              className="ml-2 flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-xs text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-white/80"
+              onClick={() => setUserMenuOpen((v) => !v)}
+              aria-label="User menu"
+            >
+              {avatarKey ? (
+                <img
+                  src={`/avatars/${avatarKey}.svg`}
+                  alt=""
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+              ) : (
+                (user?.email?.trim()?.[0] ?? "U").toUpperCase()
+              )}
+            </button>
+
+            {userMenuOpen && (
+              <div className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-lg dark:border-white/10 dark:bg-[#0b0f14]">
+                <div className="px-3 py-2">
+                  <div className="truncate text-xs font-semibold text-gray-900 dark:text-white/80">
+                    {user?.email ?? "User"}
+                  </div>
+                  <div className="truncate text-[11px] text-gray-500 dark:text-white/50">
+                    Account
+                  </div>
+                </div>
+                <div className="border-t border-gray-200 dark:border-white/10" />
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    navigate("/profile");
+                    setUserMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 dark:text-white/80 dark:hover:bg-white/10"
+                >
+                  Profile & settings
+                </button>
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    apiLogout().catch(() => {});
+                    logout();
+                    navigate("/login");
+                    setUserMenuOpen(false);
+                  }}
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-gray-50 dark:text-red-300 dark:hover:bg-white/10"
+                >
+                  Logout
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>

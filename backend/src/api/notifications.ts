@@ -1,17 +1,14 @@
 import { Router } from "express";
 import { db } from "../db";
+import { requireAuth, type AuthedRequest } from "../auth/middleware";
 
 export const notificationsRouter = Router();
 
-function requireUserId(req: any) {
-  const userId = req.header("x-user-id");
-  if (!userId) throw new Error("Missing x-user-id header (UUID)");
-  return userId;
-}
+notificationsRouter.use(requireAuth);
 
 notificationsRouter.get("/", async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const limit = Math.min(Math.max(Number(req.query.limit ?? 50), 1), 200);
     const beforeId = Number(req.query.before_id ?? 0);
     const filter = req.query.filter === "unread" ? "unread" : "all";
@@ -47,7 +44,7 @@ notificationsRouter.get("/", async (req, res) => {
 
 notificationsRouter.post("/", async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const title = typeof req.body?.title === "string" ? req.body.title : "";
     const body = typeof req.body?.body === "string" ? req.body.body : "";
     const device_uid = typeof req.body?.device_uid === "string" ? req.body.device_uid : null;
@@ -75,7 +72,7 @@ notificationsRouter.post("/", async (req, res) => {
 
 notificationsRouter.post("/read-all", async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
 
     await db.query(
       `
@@ -95,7 +92,7 @@ notificationsRouter.post("/read-all", async (req, res) => {
 
 notificationsRouter.post("/:id/read", async (req, res) => {
   try {
-    const ownerUserId = requireUserId(req);
+    const ownerUserId = (req as unknown as AuthedRequest).user.id;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
       return res.status(400).json({ error: "Invalid notification id" });

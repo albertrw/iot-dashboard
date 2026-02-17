@@ -9,8 +9,31 @@ CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  avatar_key TEXT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Add columns safely for existing installations
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS avatar_key TEXT NULL;
+
+ALTER TABLE users
+  ALTER COLUMN avatar_key DROP DEFAULT;
+
+-- =========================
+-- AUTH SESSIONS (token auth)
+-- =========================
+-- Store only a hash of the session token (never store raw tokens).
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash BYTEA PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  last_used_at TIMESTAMPTZ NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
 
 -- =========================
 -- DEVICES (microcontrollers)

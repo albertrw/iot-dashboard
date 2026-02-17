@@ -267,7 +267,17 @@ export function DeviceStoreProvider({ children }: { children: React.ReactNode })
       }
     });
     ws.connect();
+    const onAuth = () => {
+      try {
+        const t = localStorage.getItem("auth_token");
+        if (!t) ws.close();
+      } catch {
+        ws.close();
+      }
+    };
+    window.addEventListener("auth_token_changed", onAuth);
     return () => {
+      window.removeEventListener("auth_token_changed", onAuth);
       off();
       ws.close();
     };

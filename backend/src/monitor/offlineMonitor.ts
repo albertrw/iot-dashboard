@@ -34,6 +34,7 @@ export function startOfflineMonitor() {
         const body = `Device ${label} (${row.device_uid}) is offline.`;
 
         broadcastDeviceStatus({
+          owner_user_id: row.owner_user_id,
           device_uid: row.device_uid,
           is_online: false,
           last_seen_at: row.last_seen_at ?? null,

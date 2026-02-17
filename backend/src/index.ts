@@ -4,6 +4,7 @@ import cors from "cors";
 import http from "http";
 
 import "./mqtt";
+import { authRouter } from "./api/auth";
 import { devicesRouter } from "./api/devices";
 import { notificationsRouter } from "./api/notifications";
 import { initWebSocket } from "./websocket";
@@ -18,6 +19,7 @@ app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+app.use("/api/auth", authRouter);
 app.use("/api/devices", devicesRouter);
 app.use("/api/notifications", notificationsRouter);
 

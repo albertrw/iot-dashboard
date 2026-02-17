@@ -19,12 +19,16 @@ function parseJson(buf: Buffer) {
   return JSON.parse(buf.toString("utf8"));
 }
 
-async function getDeviceId(device_uid: string): Promise<string | null> {
-  const devRes = await db.query(`select id from devices where device_uid = $1`, [
-    device_uid,
-  ]);
+async function getDevice(device_uid: string): Promise<{ id: string; owner_user_id: string | null } | null> {
+  const devRes = await db.query(
+    `select id, owner_user_id from devices where device_uid = $1`,
+    [device_uid]
+  );
   if (devRes.rowCount === 0) return null;
-  return devRes.rows[0].id as string;
+  return {
+    id: devRes.rows[0].id as string,
+    owner_user_id: (devRes.rows[0].owner_user_id as string | null) ?? null,
+  };
 }
 
 /**
@@ -113,11 +117,13 @@ if (!global.__mqttStarted) {
       const device_uid = parts[1];
       const section = parts[2];
 
-      const device_id = await getDeviceId(device_uid);
-      if (!device_id) {
+      const device = await getDevice(device_uid);
+      if (!device) {
         console.log("Unknown device_uid:", device_uid);
         return;
       }
+      const device_id = device.id;
+      const owner_user_id = device.owner_user_id;
 
       // ✅ Manifest handler: devices/{uid}/meta/components
       if (section === "meta" && parts[3] === "components") {
@@ -196,8 +202,9 @@ if (!global.__mqttStarted) {
           [component_id]
         );
 
-        if (compStatusRes.rowCount > 0) {
+        if (compStatusRes.rowCount > 0 && owner_user_id) {
           broadcastComponentStatus({
+            owner_user_id,
             device_uid,
             component_key,
             is_online: true,
@@ -236,11 +243,14 @@ if (!global.__mqttStarted) {
 
         if (statusRes.rowCount > 0) {
           const row = statusRes.rows[0];
-          broadcastDeviceStatus({
-            device_uid: row.device_uid,
-            is_online: true,
-            last_seen_at: row.last_seen_at,
-          });
+          if (owner_user_id) {
+            broadcastDeviceStatus({
+              owner_user_id,
+              device_uid: row.device_uid,
+              is_online: true,
+              last_seen_at: row.last_seen_at,
+            });
+          }
         } else {
           await db.query(`update devices set last_seen_at = now(), is_online = true where id = $1`, [
             device_id,
@@ -248,12 +258,15 @@ if (!global.__mqttStarted) {
         }
 
         // 🔥 push live update to WebSocket clients
-        broadcastComponentLatest({
-          device_uid,
-          component_key,
-          payload,
-          updated_at: new Date().toISOString(),
-        });
+        if (owner_user_id) {
+          broadcastComponentLatest({
+            owner_user_id,
+            device_uid,
+            component_key,
+            payload,
+            updated_at: new Date().toISOString(),
+          });
+        }
 
         return;
       }
@@ -290,11 +303,14 @@ if (!global.__mqttStarted) {
 
           if (becameOnline.rowCount > 0) {
             const row = becameOnline.rows[0];
-            broadcastDeviceStatus({
-              device_uid: row.device_uid,
-              is_online: true,
-              last_seen_at: row.last_seen_at,
-            });
+            if (row.owner_user_id) {
+              broadcastDeviceStatus({
+                owner_user_id: row.owner_user_id,
+                device_uid: row.device_uid,
+                is_online: true,
+                last_seen_at: row.last_seen_at,
+              });
+            }
           } else {
             await db.query(`UPDATE devices SET last_seen_at = now() WHERE id = $1`, [device_id]);
           }
@@ -312,11 +328,14 @@ if (!global.__mqttStarted) {
           if (wentOffline.rowCount === 0) return;
 
           const row = wentOffline.rows[0];
-          broadcastDeviceStatus({
-            device_uid: row.device_uid,
-            is_online: false,
-            last_seen_at: row.last_seen_at,
-          });
+          if (row.owner_user_id) {
+            broadcastDeviceStatus({
+              owner_user_id: row.owner_user_id,
+              device_uid: row.device_uid,
+              is_online: false,
+              last_seen_at: row.last_seen_at,
+            });
+          }
 
           if (row.owner_user_id) {
             const label = row.name?.trim() ? row.name.trim() : row.device_uid;

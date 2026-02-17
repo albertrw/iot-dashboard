@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useDeviceStore } from "../store/deviceStore";
-import { Cpu, Activity, CheckCircle2 } from "lucide-react";
+import { Cpu, Activity, CheckCircle2, PlusCircle, KeyRound, Radio } from "lucide-react";
 import { DashboardOverviewSkeleton } from "../components/ui/skeletons/DashboardOverviewSkeleton";
 
 function StatCard({
@@ -62,6 +62,70 @@ export function DashboardOverviewPage() {
 
   if (state.devicesLoading) {
     return <DashboardOverviewSkeleton />;
+  }
+
+  if (state.devices.length === 0) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <div className="text-xs text-gray-500 dark:text-white/60">Dashboard</div>
+          <h1 className="text-xl font-semibold">Welcome</h1>
+          <div className="mt-1 text-sm text-gray-600 dark:text-white/70">
+            You don’t have any devices yet. Add your first device to start seeing live telemetry and controls.
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+            <div>
+              <div className="text-sm font-semibold text-gray-900 dark:text-white/90">
+                Add your first device
+              </div>
+              <div className="mt-1 text-xs text-gray-500 dark:text-white/60">
+                Create a device, claim it from your firmware, then publish telemetry over MQTT.
+              </div>
+            </div>
+            <Link
+              to="/devices?add=1"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-4 py-2 text-sm font-medium text-emerald-800 no-underline hover:bg-emerald-500/20 dark:text-emerald-100"
+            >
+              <PlusCircle className="h-4 w-4" />
+              New device
+            </Link>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white/90">
+                <PlusCircle className="h-4 w-4" />
+                1) Create
+              </div>
+              <div className="mt-2 text-xs text-gray-600 dark:text-white/60">
+                Go to Devices and create a new device. You’ll get a one-time claim token.
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white/90">
+                <KeyRound className="h-4 w-4" />
+                2) Claim
+              </div>
+              <div className="mt-2 text-xs text-gray-600 dark:text-white/60">
+                Use the claim token in your firmware to obtain the device secret for long-term auth.
+              </div>
+            </div>
+            <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 dark:border-white/10 dark:bg-white/5">
+              <div className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white/90">
+                <Radio className="h-4 w-4" />
+                3) Send data
+              </div>
+              <div className="mt-2 text-xs text-gray-600 dark:text-white/60">
+                Publish telemetry to MQTT and watch your dashboard update live (including WebSocket events).
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
