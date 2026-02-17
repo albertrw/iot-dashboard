@@ -240,9 +240,14 @@ export function DeviceStoreProvider({ children }: { children: React.ReactNode })
   const ws = useMemo(
     () =>
       new WsClient(
-        `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${
-          window.location.hostname
-        }:4000/ws`
+        import.meta.env.VITE_WS_URL ||
+          (import.meta.env.DEV
+            ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${
+                window.location.hostname
+              }:4000/ws`
+            : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${
+                window.location.host
+              }/ws`)
       ),
     []
   );

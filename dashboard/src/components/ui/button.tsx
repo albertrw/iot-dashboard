@@ -2,7 +2,7 @@ import React from "react";
 
 type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "secondary" | "ghost" | "danger";
-  size?: "sm" | "md";
+  size?: "sm" | "md" | "icon";
 };
 
 export function Button({
@@ -13,7 +13,12 @@ export function Button({
 }: Props) {
   const base =
     "inline-flex items-center justify-center gap-2 rounded-xl border transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-  const sizes = size === "sm" ? "px-3 py-1.5 text-sm" : "px-4 py-2 text-sm";
+  const sizes =
+    size === "icon"
+      ? "h-9 w-9 p-0"
+      : size === "sm"
+      ? "px-3 py-1.5 text-sm"
+      : "px-4 py-2 text-sm";
 
   const variants =
     variant === "primary"

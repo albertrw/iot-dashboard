@@ -72,14 +72,14 @@ export async function createDevice(input: { name?: string; description?: string 
 }
 
 export async function updateDevice(deviceUid: string, input: { name?: string; description?: string }) {
-  return api(`/api/devices/${encodeURIComponent(deviceUid)}`, {
+  return api<Device>(`/api/devices/${encodeURIComponent(deviceUid)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
 }
 
 export async function deleteDevice(deviceUid: string) {
-  return api(`/api/devices/${encodeURIComponent(deviceUid)}`, {
+  return api<void>(`/api/devices/${encodeURIComponent(deviceUid)}`, {
     method: "DELETE",
   });
 }

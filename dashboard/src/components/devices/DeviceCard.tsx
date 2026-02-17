@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Power, Wifi, WifiOff } from "lucide-react";
+import { Wifi, WifiOff } from "lucide-react";
 import InlineEditableText from "./InlineEditableText";
 import { useDeviceStore } from "../../store/deviceStore";
 

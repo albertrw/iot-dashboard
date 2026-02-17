@@ -15,7 +15,7 @@ type OfflineRow = {
 export function startOfflineMonitor() {
   setInterval(async () => {
     try {
-      const { rows } = await db.query<OfflineRow>(
+      const { rows } = await db.query(
         `
         UPDATE devices
         SET is_online = false
@@ -26,7 +26,7 @@ export function startOfflineMonitor() {
         [OFFLINE_AFTER_SEC]
       );
 
-      for (const row of rows) {
+      for (const row of rows as OfflineRow[]) {
         if (!row.owner_user_id) continue;
 
         const label = row.name?.trim() ? row.name.trim() : row.device_uid;

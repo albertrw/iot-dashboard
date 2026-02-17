@@ -21,7 +21,7 @@ function componentLabel(row: OfflineRow) {
 export function startComponentOfflineMonitor() {
   setInterval(async () => {
     try {
-      const { rows } = await db.query<OfflineRow>(
+      const { rows } = await db.query(
         `
         UPDATE components c
         SET is_online = false
@@ -35,7 +35,7 @@ export function startComponentOfflineMonitor() {
         [OFFLINE_AFTER_SEC]
       );
 
-      for (const row of rows) {
+      for (const row of rows as OfflineRow[]) {
         if (!row.owner_user_id) continue;
 
         const label = componentLabel(row);

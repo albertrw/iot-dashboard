@@ -82,7 +82,9 @@ export function TopNav() {
       });
       push(`${n.title}: ${n.body}`);
     });
-    return () => off();
+    return () => {
+      off();
+    };
   }, [ws, push, notifFilter]);
 
   const suggestions = useMemo(() => {
