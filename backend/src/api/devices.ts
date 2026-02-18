@@ -256,6 +256,72 @@ devicesRouter.post("/claim", async (req, res) => {
 });
 
 /**
+ * POST /api/devices/provision-mqtt
+ * Bootstrap helper for existing devices:
+ * - device proves it knows its device_secret
+ * - backend provisions/updates the Mosquitto user password (username=device_uid)
+ *
+ * Body:
+ *  - device_uid: string
+ *  - device_secret: string
+ */
+devicesRouter.post("/provision-mqtt", async (req, res) => {
+  try {
+    const deviceUid = req.body?.device_uid;
+    const deviceSecret = req.body?.device_secret;
+
+    if (typeof deviceUid !== "string" || deviceUid.length < 5) {
+      return res.status(400).json({ error: "device_uid is required" });
+    }
+    if (typeof deviceSecret !== "string" || deviceSecret.length < 40) {
+      return res.status(400).json({ error: "device_secret is required" });
+    }
+
+    const { rows } = await db.query(
+      `
+      SELECT id, status, device_secret_hash
+      FROM devices
+      WHERE device_uid = $1
+      LIMIT 1
+      `,
+      [deviceUid]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: "Device not found" });
+
+    const device = rows[0] as { id: string; status: string; device_secret_hash: Buffer | null };
+    if (device.status !== "active") {
+      return res.status(400).json({ error: "Device is not active" });
+    }
+    if (!device.device_secret_hash) {
+      return res.status(400).json({ error: "Device has no secret" });
+    }
+
+    const presentedHash = sha256Bytes(deviceSecret);
+    const storedHash = device.device_secret_hash;
+    if (
+      storedHash.length !== presentedHash.length ||
+      !crypto.timingSafeEqual(storedHash, presentedHash)
+    ) {
+      return res.status(401).json({ error: "Invalid device_secret" });
+    }
+
+    const provision = await provisionMqttUser({
+      device_uid: deviceUid,
+      device_secret: deviceSecret,
+    });
+    if (!provision.ok) {
+      console.error("MQTT provisioning failed for", deviceUid, ":", provision.error);
+      return res.status(500).json({ error: "MQTT provisioning failed" });
+    }
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("POST /api/devices/provision-mqtt failed:", err);
+    return res.status(500).json({ error: err.message ?? "Server error" });
+  }
+});
+
+/**
  * POST /api/devices/:deviceUid/claim-token
  * Regenerate claim token for unclaimed devices.
  *

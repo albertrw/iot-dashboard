@@ -59,7 +59,7 @@ MQTT_PROVISION_SCRIPT=/usr/local/bin/iot-mqtt-provision
   - **DHT sensor library** (Adafruit) + **Adafruit Unified Sensor** (dependency)
 
 ## Wiring (example)
-- DHT11 DATA → `D4` (GPIO2) (change `DHT_PIN` if needed)
+- DHT11 DATA → `D7` (GPIO13) (change `DHT_PIN` if needed)
 - DHT11 VCC → 3.3V
 - DHT11 GND → GND
 

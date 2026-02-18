@@ -7,6 +7,17 @@
 #include <time.h>
 
 // ===========================
+// DEBUG / TLS OPTIONS
+// ===========================
+// Set to 1 to print TLS errors when MQTT connect fails.
+#define DEBUG_TLS 1
+
+// Temporary troubleshooting only:
+// If set to 1, TLS certificate validation is disabled.
+// DO NOT ship devices with this enabled.
+#define MQTT_TLS_INSECURE 0
+
+// ===========================
 // USER CONFIG (EDIT THESE)
 // ===========================
 const char* WIFI_SSID = "YOUR_WIFI_SSID";
@@ -28,10 +39,10 @@ const int MQTT_PORT = 8883; // TLS
 // - MQTT password = device_secret returned by claim (stored in EEPROM)
 
 // DHT11 wiring
-// - DATA -> D4 (GPIO2) (change if you want)
+// - DATA -> D7 (GPIO13)
 // - VCC  -> 3.3V
 // - GND  -> GND
-const int DHT_PIN = D4;
+const int DHT_PIN = D7;
 const int DHT_TYPE = DHT11;
 
 // Publish interval (DHT11 is slow; don’t read too often)
@@ -95,6 +106,7 @@ const uint32_t MAGIC = 0xBEEFF00D;
 
 unsigned long lastTelemetry = 0;
 String deviceSecret = "";
+bool mqttProvisionAttempted = false;
 
 String topicManifest() {
   return "devices/" + String(DEVICE_UID) + "/meta/components";
@@ -167,6 +179,11 @@ void syncTime() {
   mqttNet.setTrustAnchors(&rootCert);
   httpsNet.setX509Time(now);
   mqttNet.setX509Time(now);
+
+#if MQTT_TLS_INSECURE
+  httpsNet.setInsecure();
+  mqttNet.setInsecure();
+#endif
 }
 
 String extractJsonString(const String& json, const char* key) {
@@ -212,6 +229,39 @@ String claimDeviceGetSecret() {
   return extractJsonString(resp, "device_secret");
 }
 
+bool provisionMqttCredentials() {
+  if (deviceSecret.length() == 0) return false;
+
+  HTTPClient http;
+  String url = String("https://") + API_HOST + "/api/devices/provision-mqtt";
+  Serial.print("Provision MQTT via: ");
+  Serial.println(url);
+
+  if (!http.begin(httpsNet, url)) {
+    Serial.println("HTTP begin failed");
+    return false;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+  String body = String("{\"device_uid\":\"") + DEVICE_UID +
+                String("\",\"device_secret\":\"") + deviceSecret + "\"}";
+
+  int code = http.POST(body);
+  String resp = http.getString();
+  http.end();
+
+  Serial.print("Provision HTTP code: ");
+  Serial.println(code);
+  if (code >= 200 && code < 300) {
+    Serial.println("Provision OK");
+    return true;
+  }
+
+  Serial.print("Provision response: ");
+  Serial.println(resp);
+  return false;
+}
+
 void publishManifest() {
   String payload =
     String("{\"components\":[") +
@@ -236,6 +286,8 @@ void mqttConnect() {
     return;
   }
 
+  mqttNet.setTimeout(15);
+
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setBufferSize(1024); // manifest + payloads
 
@@ -247,10 +299,17 @@ void mqttConnect() {
     Serial.print(" ... ");
 
     const String statusTopic = topicStatus();
-    mqtt.setWill(statusTopic.c_str(), "{\"state\":\"offline\"}", true, 0);
 
     // clientId = DEVICE_UID, username = DEVICE_UID, password = deviceSecret
-    bool ok = mqtt.connect(DEVICE_UID, DEVICE_UID, deviceSecret.c_str());
+    bool ok = mqtt.connect(
+      DEVICE_UID,
+      DEVICE_UID,
+      deviceSecret.c_str(),
+      statusTopic.c_str(),
+      0,     // will QoS
+      true,  // will retain
+      "{\"state\":\"offline\"}"
+    );
     if (ok) {
       Serial.println("OK");
       publishStatus(true);
@@ -258,8 +317,26 @@ void mqttConnect() {
       return;
     }
 
+#if DEBUG_TLS
+    char tlsErr[160];
+    int tlsCode = mqttNet.getLastSSLError(tlsErr, sizeof(tlsErr));
+    if (tlsCode != 0) {
+      Serial.print("TLS error code: ");
+      Serial.println(tlsCode);
+      Serial.print("TLS error: ");
+      Serial.println(tlsErr);
+    }
+#endif
+
     Serial.print("failed, state=");
     Serial.println(mqtt.state());
+
+    // state=5 => not authorized (credentials/ACL). Try provisioning once, then retry.
+    if (mqtt.state() == 5 && !mqttProvisionAttempted) {
+      mqttProvisionAttempted = true;
+      provisionMqttCredentials();
+    }
+
     delay(1500);
   }
 }
@@ -309,6 +386,9 @@ void setup() {
     Serial.println("device_secret is empty. Check claim token and try again.");
     return;
   }
+
+  // Ensure broker knows this device user/password (useful for existing devices).
+  provisionMqttCredentials();
 
   mqttConnect();
 }
