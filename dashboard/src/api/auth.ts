@@ -7,7 +7,7 @@ export type AuthUser = {
 };
 
 export async function register(params: { email: string; password: string }) {
-  return api<{ token: string; user: AuthUser; expires_at: string }>(
+  return api<{ pending_approval: true; user: AuthUser; message?: string }>(
     "/api/auth/register",
     {
     method: "POST",

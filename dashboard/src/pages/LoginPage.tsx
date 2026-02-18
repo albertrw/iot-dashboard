@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/Input";
-import { useToast } from "../components/ui/toast";
+import { ApiError } from "../api/client";
 import { useAuth } from "../auth/auth";
 
 function isValidEmail(v: string) {
@@ -12,7 +12,6 @@ function isValidEmail(v: string) {
 export function LoginPage() {
   const nav = useNavigate();
   const location = useLocation();
-  const { push } = useToast();
   const { login } = useAuth();
 
   const from = useMemo(() => {
@@ -23,19 +22,29 @@ export function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setError(null);
+    setPendingApproval(false);
     const e1 = email.trim().toLowerCase();
-    if (!isValidEmail(e1)) return push("Enter a valid email");
-    if (password.length < 8) return push("Password must be at least 8 characters");
+    if (!isValidEmail(e1)) return setError("Enter a valid email");
+    if (password.length < 8) return setError("Password must be at least 8 characters");
 
     setLoading(true);
     try {
       await login(e1, password);
       nav(from, { replace: true });
     } catch (err: any) {
-      push(err?.message ?? "Login failed");
+      if (err instanceof ApiError) {
+        const status = (err.data as any)?.account_status;
+        if (status === "pending") setPendingApproval(true);
+        setError(err.message || "Login failed");
+      } else {
+        setError(err?.message ?? "Login failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -55,6 +64,20 @@ export function LoginPage() {
           onSubmit={onSubmit}
           className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
         >
+          {error ? (
+            <div
+              role="alert"
+              className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100"
+            >
+              <div className="font-medium">{error}</div>
+              {pendingApproval ? (
+                <div className="mt-1 text-xs text-red-700/80 dark:text-red-100/80">
+                  Your account is under review. You can try again after approval.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <label className="block text-sm font-medium text-gray-700 dark:text-white/80">
             Email
           </label>
@@ -99,4 +122,3 @@ export function LoginPage() {
     </div>
   );
 }
-

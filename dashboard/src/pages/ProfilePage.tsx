@@ -18,6 +18,8 @@ export function ProfilePage() {
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   const [avatarLoading, setAvatarLoading] = useState(false);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const avatarRef = useRef<HTMLDivElement | null>(null);
@@ -49,9 +51,11 @@ export function ProfilePage() {
 
   async function onChangePassword(e: React.FormEvent) {
     e.preventDefault();
-    if (newPassword.length < 8) return push("New password must be at least 8 characters");
-    if (newPassword !== confirm) return push("Passwords do not match");
-    if (!currentPassword) return push("Enter your current password");
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    if (newPassword.length < 8) return setPasswordError("New password must be at least 8 characters");
+    if (newPassword !== confirm) return setPasswordError("Passwords do not match");
+    if (!currentPassword) return setPasswordError("Enter your current password");
 
     setLoading(true);
     try {
@@ -63,9 +67,9 @@ export function ProfilePage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirm("");
-      push("Password updated");
+      setPasswordSuccess("Password updated");
     } catch (err: any) {
-      push(err?.message ?? "Failed to update password");
+      setPasswordError(err?.message ?? "Failed to update password");
     } finally {
       setLoading(false);
     }
@@ -185,6 +189,17 @@ export function ProfilePage() {
         </div>
 
         <form onSubmit={onChangePassword} className="mt-4 grid gap-3">
+          {passwordError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-100">
+              {passwordError}
+            </div>
+          ) : null}
+          {passwordSuccess ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+              {passwordSuccess}
+            </div>
+          ) : null}
+
           <div>
             <label className="text-xs font-medium text-gray-700 dark:text-white/70">
               Current password

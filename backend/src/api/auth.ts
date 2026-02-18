@@ -37,6 +37,7 @@ function pickUserRow(row: any) {
     id: row.id as string,
     email: row.email as string,
     avatar_key: sanitizeAvatarKey(row.avatar_key),
+    account_status: typeof row.account_status === "string" ? row.account_status : undefined,
   };
 }
 
@@ -57,17 +58,19 @@ authRouter.post("/register", async (req, res) => {
 
     const { rows } = await db.query(
       `
-      INSERT INTO users (email, password_hash)
-      VALUES ($1, $2)
-      RETURNING id, email, avatar_key, created_at
+      INSERT INTO users (email, password_hash, account_status)
+      VALUES ($1, $2, 'pending')
+      RETURNING id, email, avatar_key, account_status, created_at
       `,
       [email, passwordHash]
     );
 
     const user = pickUserRow(rows[0]);
-    const session = await createSession(user.id);
-
-    return res.status(201).json({ token: session.token, user, expires_at: session.expires_at });
+    return res.status(201).json({
+      pending_approval: true,
+      user,
+      message: "Account created and is pending approval",
+    });
   } catch (err: any) {
     const msg = String(err?.message ?? "");
     if (msg.includes("duplicate key") || msg.includes("users_email_key")) {
@@ -89,14 +92,29 @@ authRouter.post("/login", async (req, res) => {
     }
 
     const { rows } = await db.query(
-      `SELECT id, email, avatar_key, password_hash FROM users WHERE email = $1 LIMIT 1`,
+      `SELECT id, email, avatar_key, password_hash, account_status FROM users WHERE email = $1 LIMIT 1`,
       [email]
     );
     if (rows.length === 0) return res.status(401).json({ error: "Invalid credentials" });
 
-    const row = rows[0] as { id: string; email: string; avatar_key: string | null; password_hash: string };
+    const row = rows[0] as {
+      id: string;
+      email: string;
+      avatar_key: string | null;
+      password_hash: string;
+      account_status?: string | null;
+    };
+
     const ok = await verifyPassword(password, row.password_hash);
     if (!ok) return res.status(401).json({ error: "Invalid credentials" });
+
+    const status = typeof row.account_status === "string" ? row.account_status : "active";
+    if (status !== "active") {
+      return res.status(403).json({
+        error: status === "pending" ? "Account is pending approval" : "Account is disabled",
+        account_status: status,
+      });
+    }
 
     const user = pickUserRow(row);
     const session = await createSession(user.id);

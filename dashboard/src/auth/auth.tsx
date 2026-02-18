@@ -6,7 +6,7 @@ type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string) => Promise<{ pending_approval: true; message?: string }>;
   setSession: (token: string, user: AuthUser) => void;
   updateUser: (user: AuthUser) => void;
   logout: () => void;
@@ -82,9 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       async register(email: string, password: string) {
         const res = await apiRegister({ email, password });
-        writeToken(res.token);
-        setToken(res.token);
-        setUser(res.user);
+        // New accounts are pending approval; don't create a session.
+        return { pending_approval: true, message: res.message };
       },
       setSession(nextToken: string, nextUser: AuthUser) {
         writeToken(nextToken);

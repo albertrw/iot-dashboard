@@ -43,6 +43,7 @@ export async function getSessionUser(token: string): Promise<SessionUser | null>
     JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = $1
       AND s.expires_at > now()
+      AND u.account_status = 'active'
     LIMIT 1
     `,
     [tokenHash]

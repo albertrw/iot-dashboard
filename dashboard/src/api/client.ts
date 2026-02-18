@@ -25,6 +25,30 @@ function clearAuthToken() {
   }
 }
 
+export class ApiError extends Error {
+  status: number;
+  statusText: string;
+  data: unknown;
+  raw: string;
+
+  constructor(params: { message: string; status: number; statusText: string; data: unknown; raw: string }) {
+    super(params.message);
+    this.name = "ApiError";
+    this.status = params.status;
+    this.statusText = params.statusText;
+    this.data = params.data;
+    this.raw = params.raw;
+  }
+}
+
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 export async function api<T>(
   path: string,
   options: RequestInit = {}
@@ -40,11 +64,28 @@ export async function api<T>(
   });
 
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
+    if (res.status === 401) {
       clearAuthToken();
     }
-    const text = await res.text().catch(() => "");
-    throw new Error(`API ${res.status} ${res.statusText}: ${text}`);
+    const raw = await res.text().catch(() => "");
+    const contentType = res.headers.get("content-type") || "";
+    const maybeJson =
+      contentType.includes("application/json") || raw.trim().startsWith("{") || raw.trim().startsWith("[");
+    const data = maybeJson ? safeJsonParse(raw) : null;
+
+    const message =
+      (data && typeof (data as any).error === "string" && (data as any).error) ||
+      (data && typeof (data as any).message === "string" && (data as any).message) ||
+      raw ||
+      `Request failed (${res.status})`;
+
+    throw new ApiError({
+      message,
+      status: res.status,
+      statusText: res.statusText,
+      data,
+      raw,
+    });
   }
 
   // allow empty response bodies

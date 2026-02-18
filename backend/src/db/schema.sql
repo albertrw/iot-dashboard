@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   avatar_key TEXT NULL,
+  account_status TEXT NOT NULL DEFAULT 'active'
+    CHECK (account_status IN ('pending', 'active', 'disabled')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -19,6 +21,23 @@ ALTER TABLE users
 
 ALTER TABLE users
   ALTER COLUMN avatar_key DROP DEFAULT;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS account_status TEXT NOT NULL DEFAULT 'active';
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'users_account_status_check'
+      AND conrelid = 'public.users'::regclass
+  ) THEN
+    ALTER TABLE users
+      ADD CONSTRAINT users_account_status_check
+      CHECK (account_status IN ('pending', 'active', 'disabled'));
+  END IF;
+END $$;
 
 -- =========================
 -- AUTH SESSIONS (token auth)

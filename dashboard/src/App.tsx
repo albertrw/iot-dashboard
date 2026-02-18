@@ -6,6 +6,7 @@ import { DeviceLivePage } from "./pages/DeviceLivePage";
 import { TechniciansGuidePage } from "./pages/TechniciansGuidePage";
 import { LoginPage } from "./pages/LoginPage";
 import { SignupPage } from "./pages/SignupPage";
+import { PendingApprovalPage } from "./pages/PendingApprovalPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { RequireAuth } from "./auth/RequireAuth";
 import { DeviceStoreProvider } from "./store/deviceStore";
@@ -28,6 +29,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/signup" element={<SignupPage />} />
+        <Route path="/pending-approval" element={<PendingApprovalPage />} />
 
         <Route element={<ProtectedLayout />}>
           <Route path="/" element={<DashboardOverviewPage />} />
