@@ -101,12 +101,12 @@ DHT dht(DHT_PIN, DHT_TYPE);
 const int EEPROM_SIZE = 512;
 const int MAGIC_ADDR = 0;
 const int SECRET_ADDR = 8;
-const int SECRET_MAX = 128;
+const int SECRET_MAX = 80; // device_secret is 64 hex chars
 const uint32_t MAGIC = 0xBEEFF00D;
 
 unsigned long lastTelemetry = 0;
 String deviceSecret = "";
-bool mqttProvisionAttempted = false;
+unsigned long nextProvisionAttemptAt = 0;
 
 String topicManifest() {
   return "devices/" + String(DEVICE_UID) + "/meta/components";
@@ -180,6 +180,11 @@ void syncTime() {
   httpsNet.setX509Time(now);
   mqttNet.setX509Time(now);
 
+  // Reduce TLS buffer sizes to fit on ESP8266 (prevents BearSSL OOM).
+  // If you still see TLS OOM errors, try lowering MQTT buffer size too.
+  httpsNet.setBufferSizes(4096, 1024);
+  mqttNet.setBufferSizes(4096, 1024);
+
 #if MQTT_TLS_INSECURE
   httpsNet.setInsecure();
   mqttNet.setInsecure();
@@ -213,12 +218,19 @@ String claimDeviceGetSecret() {
   }
 
   http.addHeader("Content-Type", "application/json");
-  String body = String("{\"device_uid\":\"") + DEVICE_UID +
-                String("\",\"claim_token\":\"") + CLAIM_TOKEN + "\"}";
+  char body[220];
+  snprintf(
+    body,
+    sizeof(body),
+    "{\"device_uid\":\"%s\",\"claim_token\":\"%s\"}",
+    DEVICE_UID,
+    CLAIM_TOKEN
+  );
 
-  int code = http.POST(body);
+  int code = http.POST((uint8_t*)body, strlen(body));
   String resp = http.getString();
   http.end();
+  httpsNet.stop();
 
   Serial.print("Claim HTTP code: ");
   Serial.println(code);
@@ -243,12 +255,19 @@ bool provisionMqttCredentials() {
   }
 
   http.addHeader("Content-Type", "application/json");
-  String body = String("{\"device_uid\":\"") + DEVICE_UID +
-                String("\",\"device_secret\":\"") + deviceSecret + "\"}";
+  char body[220];
+  snprintf(
+    body,
+    sizeof(body),
+    "{\"device_uid\":\"%s\",\"device_secret\":\"%s\"}",
+    DEVICE_UID,
+    deviceSecret.c_str()
+  );
 
-  int code = http.POST(body);
+  int code = http.POST((uint8_t*)body, strlen(body));
   String resp = http.getString();
   http.end();
+  httpsNet.stop();
 
   Serial.print("Provision HTTP code: ");
   Serial.println(code);
@@ -289,7 +308,7 @@ void mqttConnect() {
   mqttNet.setTimeout(15);
 
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
-  mqtt.setBufferSize(1024); // manifest + payloads
+  mqtt.setBufferSize(512); // keep small to save RAM (manifest/telemetry are small)
 
   while (!mqtt.connected()) {
     Serial.print("MQTT connecting to ");
@@ -331,10 +350,14 @@ void mqttConnect() {
     Serial.print("failed, state=");
     Serial.println(mqtt.state());
 
-    // state=5 => not authorized (credentials/ACL). Try provisioning once, then retry.
-    if (mqtt.state() == 5 && !mqttProvisionAttempted) {
-      mqttProvisionAttempted = true;
-      provisionMqttCredentials();
+    // state=5 => not authorized (credentials/ACL). Try provisioning with backoff.
+    if (mqtt.state() == 5) {
+      const unsigned long nowMs = millis();
+      if (nowMs >= nextProvisionAttemptAt) {
+        Serial.println("Trying to provision MQTT credentials...");
+        provisionMqttCredentials();
+        nextProvisionAttemptAt = nowMs + 60000; // try again in 60s
+      }
     }
 
     delay(1500);
@@ -386,9 +409,6 @@ void setup() {
     Serial.println("device_secret is empty. Check claim token and try again.");
     return;
   }
-
-  // Ensure broker knows this device user/password (useful for existing devices).
-  provisionMqttCredentials();
 
   mqttConnect();
 }

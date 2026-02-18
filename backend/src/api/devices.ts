@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { db } from "../db";
 import { mqttClient } from "../mqtt/client";
 import { requireAuth, type AuthedRequest } from "../auth/middleware";
-import { provisionMqttUser } from "../mqtt/provision";
+import { mqttProvisionEnabled, provisionMqttUser } from "../mqtt/provision";
 
 
 
@@ -267,6 +267,10 @@ devicesRouter.post("/claim", async (req, res) => {
  */
 devicesRouter.post("/provision-mqtt", async (req, res) => {
   try {
+    if (!mqttProvisionEnabled()) {
+      return res.status(503).json({ error: "MQTT provisioning is disabled on server" });
+    }
+
     const deviceUid = req.body?.device_uid;
     const deviceSecret = req.body?.device_secret;
 
@@ -314,6 +318,7 @@ devicesRouter.post("/provision-mqtt", async (req, res) => {
       return res.status(500).json({ error: "MQTT provisioning failed" });
     }
 
+    console.log("✅ MQTT provisioned user:", deviceUid);
     return res.json({ ok: true });
   } catch (err: any) {
     console.error("POST /api/devices/provision-mqtt failed:", err);

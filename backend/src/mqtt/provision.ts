@@ -7,6 +7,10 @@ function enabled() {
   return String(process.env.MQTT_PROVISION_ENABLED ?? "").toLowerCase() === "true";
 }
 
+export function mqttProvisionEnabled() {
+  return enabled();
+}
+
 function provisionScriptPath() {
   return process.env.MQTT_PROVISION_SCRIPT ?? "/usr/local/bin/iot-mqtt-provision";
 }
@@ -54,4 +58,3 @@ export async function provisionMqttUser(params: {
     return { ok: false, error: msg };
   }
 }
-
