@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { db } from "../db";
 import { mqttClient } from "../mqtt/client";
 import { requireAuth, type AuthedRequest } from "../auth/middleware";
+import { provisionMqttUser } from "../mqtt/provision";
 
 
 
@@ -236,9 +237,18 @@ devicesRouter.post("/claim", async (req, res) => {
       [device.id, secretHash]
     );
 
+    const provision = await provisionMqttUser({
+      device_uid: deviceUid,
+      device_secret: deviceSecret,
+    });
+    if (!provision.ok) {
+      console.error("MQTT provisioning failed for", deviceUid, ":", provision.error);
+    }
+
     res.json({
       device_uid: deviceUid,
       device_secret: deviceSecret, // IMPORTANT: show once
+      mqtt_provisioned: provision.ok,
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message ?? "Server error" });
